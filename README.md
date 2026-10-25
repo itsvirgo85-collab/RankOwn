@@ -2,42 +2,60 @@
 
 **Own your rankings. Understand your site.**
 
-RankOwn is a modern SEO intelligence platform that helps website owners understand their real search performance using official Google data, combined with clean technical audits and keyword tools.
+Professional SEO intelligence platform built on real Google data.
 
-## Core Philosophy
+## Features
 
-- Never show fake metrics
-- Always show data source + freshness
-- Free tier focuses on **your own website** data (most accurate)
-- Premium features for keyword research & competitor insights
+### Free
+- Google Login
+- Connect Google Search Console
+- Real clicks, impressions, queries
+- Technical SEO Audit
+- Limited Keyword Research (20/day)
 
-## Features (Phase 1)
-
-- Modern professional homepage
-- Google-ready login screen
-- Clean dashboard shell
-- Database schema for GSC + GA4 + Technical Audits
+### Pro
+- Unlimited Keyword Research
+- Competitor Analysis
+- Keyword Gap
+- Reports & Export
 
 ## Tech Stack
 
 - Next.js 15 + TypeScript
-- Tailwind CSS
+- NextAuth (Google OAuth)
 - Supabase (PostgreSQL)
-- Lucide Icons
+- Google Search Console API
+- Tailwind CSS
 
-## Getting Started
+## Setup
 
-1. Clone the repo
-2. Copy `.env.example` to `.env.local` and fill values
-3. `npm install`
-4. `npm run dev`
+1. Clone repo
+2. Copy `.env.example` to `.env.local`
+3. Fill Google OAuth + Supabase keys
+4. `npm install`
+5. `npm run dev`
 
-## Roadmap
+## Environment Variables
 
-- [x] Phase 1: UI + Database schema
-- [ ] Phase 2: Google OAuth + GSC connection
-- [ ] Phase 3: Keyword Research
-- [ ] Phase 4: Competitor Analysis
+```env
+NEXTAUTH_URL=
+NEXTAUTH_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+```
+
+## Google Cloud Setup
+
+Enable these APIs:
+- Google Search Console API
+- Google Analytics Data API (optional)
+
+OAuth scopes used:
+- `webmasters.readonly`
+- `analytics.readonly`
 
 ## License
 

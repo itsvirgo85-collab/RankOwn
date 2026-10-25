@@ -1,14 +1,16 @@
+"use client";
+
 import Link from "next/link";
+import { signIn } from "next-auth/react";
 import { BarChart3 } from "lucide-react";
 
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Simple top bar */}
       <div className="px-6 py-4">
         <Link href="/" className="inline-flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <BarChart3 className="w-4.5 h-4.5 text-white" />
+            <BarChart3 className="w-4 h-4 text-white" />
           </div>
           <span className="font-semibold text-lg text-slate-900">RankOwn</span>
         </Link>
@@ -26,7 +28,10 @@ export default function LoginPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-            <button className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition">
+            <button
+              onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+              className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition"
+            >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
                   fill="#4285F4"
