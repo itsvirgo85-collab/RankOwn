@@ -4,27 +4,29 @@ import { BarChart3 } from "lucide-react";
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <div className="flex-1 flex items-center justify-center px-6">
-        <div className="w-full max-w-md">
+      {/* Simple top bar */}
+      <div className="px-6 py-4">
+        <Link href="/" className="inline-flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <BarChart3 className="w-4.5 h-4.5 text-white" />
+          </div>
+          <span className="font-semibold text-lg text-slate-900">RankOwn</span>
+        </Link>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center px-6 pb-16">
+        <div className="w-full max-w-[420px]">
           <div className="text-center mb-8">
-            <Link href="/" className="inline-flex items-center gap-2 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
-                <BarChart3 className="w-6 h-6 text-white" />
-              </div>
-              <span className="font-semibold text-2xl">RankOwn</span>
-            </Link>
             <h1 className="text-2xl font-bold text-slate-900 mb-2">
-              Welcome back
+              Sign in to RankOwn
             </h1>
             <p className="text-slate-600">
-              Sign in with Google to connect your Search Console and Analytics
+              Connect your Google account to access Search Console and Analytics data
             </p>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-            <button
-              className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-            >
+            <button className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
                   fill="#4285F4"
@@ -46,13 +48,16 @@ export default function LoginPage() {
               Continue with Google
             </button>
 
-            <p className="mt-6 text-center text-xs text-slate-500">
-              By continuing you agree to connect your Google account for Search Console and Analytics data only.
-            </p>
+            <div className="mt-6 pt-6 border-t border-slate-100">
+              <p className="text-xs text-slate-500 text-center leading-relaxed">
+                By continuing, you allow RankOwn to access your Google Search Console
+                and Analytics data. We never invent metrics.
+              </p>
+            </div>
           </div>
 
           <p className="mt-8 text-center text-sm text-slate-500">
-            <Link href="/" className="hover:text-slate-700">
+            <Link href="/" className="hover:text-slate-800 transition">
               ← Back to home
             </Link>
           </p>
