@@ -14,6 +14,8 @@ export const authOptions: NextAuthOptions = {
             "profile",
             "https://www.googleapis.com/auth/webmasters.readonly",
             "https://www.googleapis.com/auth/analytics.readonly",
+            // Needed for Keyword Planner (Google Ads API)
+            "https://www.googleapis.com/auth/adwords",
           ].join(" "),
           access_type: "offline",
           prompt: "consent",
@@ -23,7 +25,6 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      // Save access_token and refresh_token on first sign in
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;

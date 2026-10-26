@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { google } from "googleapis";
 
-const LOCATION_CODES: Record<string, number> = {
-  US: 2840,
-  GB: 2826,
-  PK: 2586,
-  IN: 2356,
-  CA: 2124,
-  AU: 2036,
-};
-
+/**
+ * Free keyword research via Google Ads KeywordPlanIdeaService.
+ * Requires:
+ * - User signed in with adwords scope (or GOOGLE_ADS_* server credentials)
+ * - GOOGLE_ADS_CUSTOMER_ID (10-digit, no dashes)
+ * - Google Ads API enabled + Basic access on the Cloud project (for planning)
+ */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -19,64 +20,122 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Seed keyword is required" }, { status: 400 });
     }
 
-    const login = process.env.DATAFORSEO_LOGIN;
-    const password = process.env.DATAFORSEO_PASSWORD;
-
-    if (!login || !password) {
+    const customerId = (process.env.GOOGLE_ADS_CUSTOMER_ID || "").replace(/-/g, "");
+    if (!customerId) {
       return NextResponse.json(
         {
           error:
-            "Keyword provider not configured. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD in environment variables.",
+            "GOOGLE_ADS_CUSTOMER_ID not set. Create a free Google Ads account, note the customer ID, and add it to Vercel env.",
         },
         { status: 503 }
       );
     }
 
-    const locationCode = LOCATION_CODES[country] || 2840;
-    const auth = Buffer.from(`${login}:${password}`).toString("base64");
+    const session = await getServerSession(authOptions);
+    let accessToken = session?.accessToken as string | undefined;
 
-    const response = await fetch("https://api.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          keywords: [seed],
-          location_code: locationCode,
-          language_code: "en",
-          sort_by: "search_volume",
-        },
-      ]),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok || json.status_code !== 20000) {
-      const msg = json?.status_message || "DataForSEO request failed";
-      return NextResponse.json({ error: msg }, { status: 502 });
+    // Fallback: refresh token stored for server-side Ads access (optional)
+    if (!accessToken && process.env.GOOGLE_ADS_REFRESH_TOKEN) {
+      const oauth2 = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      oauth2.setCredentials({ refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN });
+      const t = await oauth2.getAccessToken();
+      accessToken = t.token || undefined;
     }
 
-    const items = json?.tasks?.[0]?.result?.[0]?.items || [];
-    const keywords = items.map((item: any) => ({
-      keyword: item.keyword,
-      volume: item.search_volume ?? null,
-      cpc: item.cpc ?? null,
-      competition: item.competition ?? null,
-      competitionLevel: item.competition_level ?? null,
-      source: "DataForSEO / Google Ads",
-    }));
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Sign in with Google (Ads permission) or set GOOGLE_ADS_REFRESH_TOKEN for server-side Keyword Planner access.",
+        },
+        { status: 401 }
+      );
+    }
+
+    // Geo targets (common free set)
+    const geoByCountry: Record<string, string> = {
+      US: "geoTargetConstants/2840",
+      GB: "geoTargetConstants/2826",
+      PK: "geoTargetConstants/2586",
+      IN: "geoTargetConstants/2356",
+      CA: "geoTargetConstants/2124",
+      AU: "geoTargetConstants/2036",
+    };
+    const geo = geoByCountry[country] || geoByCountry.US;
+
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: accessToken });
+
+    // googleapis ads is via google.ads or REST; use REST for KeywordPlanIdeaService
+    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
+    const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || "").replace(/-/g, "");
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    if (developerToken) headers["developer-token"] = developerToken;
+    if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
+
+    const endpoint = `https://googleads.googleapis.com/v17/customers/${customerId}:generateKeywordIdeas`;
+
+    const adsRes = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        language: "languageConstants/1000", // English
+        geoTargetConstants: [geo],
+        includeAdultKeywords: false,
+        keywordPlanNetwork: "GOOGLE_SEARCH",
+        keywordSeed: { keywords: [seed] },
+      }),
+    });
+
+    const adsJson = await adsRes.json();
+
+    if (!adsRes.ok) {
+      const msg =
+        adsJson?.error?.message ||
+        adsJson?.error?.status ||
+        `Google Ads API error (${adsRes.status})`;
+      return NextResponse.json(
+        {
+          error: msg,
+          hint:
+            "Enable Google Ads API, apply for Basic access (planning), use a valid Ads customer ID, and grant adwords scope on login.",
+        },
+        { status: 502 }
+      );
+    }
+
+    const results = adsJson?.results || [];
+    const keywords = results.slice(0, 50).map((row: any) => {
+      const metrics = row.keywordIdeaMetrics || {};
+      return {
+        keyword: row.text || row.keyword?.text || "",
+        volume: metrics.avgMonthlySearches ?? null,
+        cpc:
+          metrics.averageCpcMicros != null
+            ? Number(metrics.averageCpcMicros) / 1_000_000
+            : null,
+        competition: metrics.competitionIndex != null ? Number(metrics.competitionIndex) / 100 : null,
+        competitionLevel: metrics.competition ?? null,
+        source: "Google Ads Keyword Planner API",
+      };
+    }).filter((k: any) => k.keyword);
 
     return NextResponse.json({
       keywords,
-      source: "DataForSEO (Google Ads keyword data)",
+      source: "Google Ads Keyword Planner (official API)",
       fetchedAt: new Date().toISOString(),
       country,
       seed,
     });
   } catch (e: any) {
     console.error("keywords api error", e);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
   }
 }
