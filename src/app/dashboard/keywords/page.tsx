@@ -34,13 +34,29 @@ export default function KeywordsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seed: seed.trim(), country }),
+        credentials: "same-origin",
       });
-      const data = await res.json();
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setError(
+          res.ok
+            ? "Server returned invalid response. Redeploy the latest version and hard-refresh the page."
+            : `Request failed (${res.status}). You may need to sign in with Google first, or the API is not deployed yet.`
+        );
+        setHint("Open /login, sign in with Google (allow Ads), then try again after a hard refresh.");
+        return;
+      }
+
       if (!res.ok) {
         setError(data.error || "Keyword research failed");
         if (data.hint) setHint(data.hint);
         return;
       }
+
       setResults(data.keywords || []);
       setMeta({ source: data.source, fetchedAt: data.fetchedAt });
     } catch {

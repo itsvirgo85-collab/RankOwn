@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { google } from "googleapis";
 
-/**
- * Free keyword research via Google Ads KeywordPlanIdeaService.
- * Requires:
- * - User signed in with adwords scope (or GOOGLE_ADS_* server credentials)
- * - GOOGLE_ADS_CUSTOMER_ID (10-digit, no dashes)
- * - Google Ads API enabled + Basic access on the Cloud project (for planning)
- */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const seed = String(body.seed || "").trim();
-    const country = String(body.country || "US").toUpperCase();
+    const body = await req.json().catch(() => ({}));
+    const seed = String((body as any).seed || "").trim();
+    const country = String((body as any).country || "US").toUpperCase();
 
     if (!seed) {
       return NextResponse.json({ error: "Seed keyword is required" }, { status: 400 });
@@ -25,7 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "GOOGLE_ADS_CUSTOMER_ID not set. Create a free Google Ads account, note the customer ID, and add it to Vercel env.",
+            "GOOGLE_ADS_CUSTOMER_ID not set. Add your Google Ads customer ID in Vercel environment variables.",
         },
         { status: 503 }
       );
@@ -34,15 +26,22 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
     let accessToken = session?.accessToken as string | undefined;
 
-    // Fallback: refresh token stored for server-side Ads access (optional)
     if (!accessToken && process.env.GOOGLE_ADS_REFRESH_TOKEN) {
-      const oauth2 = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET
-      );
-      oauth2.setCredentials({ refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN });
-      const t = await oauth2.getAccessToken();
-      accessToken = t.token || undefined;
+      try {
+        const { google } = await import("googleapis");
+        const oauth2 = new google.auth.OAuth2(
+          process.env.GOOGLE_CLIENT_ID,
+          process.env.GOOGLE_CLIENT_SECRET
+        );
+        oauth2.setCredentials({ refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN });
+        const t = await oauth2.getAccessToken();
+        accessToken = t.token || undefined;
+      } catch (e: any) {
+        return NextResponse.json(
+          { error: "Failed to refresh Google Ads token", hint: e?.message },
+          { status: 500 }
+        );
+      }
     }
 
     if (!accessToken) {
@@ -50,12 +49,12 @@ export async function POST(req: Request) {
         {
           error:
             "Sign in with Google (Ads permission) or set GOOGLE_ADS_REFRESH_TOKEN for server-side Keyword Planner access.",
+          hint: "Go to /login, continue with Google, allow Ads access, then retry search.",
         },
         { status: 401 }
       );
     }
 
-    // Geo targets (common free set)
     const geoByCountry: Record<string, string> = {
       US: "geoTargetConstants/2840",
       GB: "geoTargetConstants/2826",
@@ -66,10 +65,6 @@ export async function POST(req: Request) {
     };
     const geo = geoByCountry[country] || geoByCountry.US;
 
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: accessToken });
-
-    // googleapis ads is via google.ads or REST; use REST for KeywordPlanIdeaService
     const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
     const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || "").replace(/-/g, "");
 
@@ -86,7 +81,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        language: "languageConstants/1000", // English
+        language: "languageConstants/1000",
         geoTargetConstants: [geo],
         includeAdultKeywords: false,
         keywordPlanNetwork: "GOOGLE_SEARCH",
@@ -94,7 +89,7 @@ export async function POST(req: Request) {
       }),
     });
 
-    const adsJson = await adsRes.json();
+    const adsJson = await adsRes.json().catch(() => ({}));
 
     if (!adsRes.ok) {
       const msg =
@@ -105,27 +100,31 @@ export async function POST(req: Request) {
         {
           error: msg,
           hint:
-            "Enable Google Ads API, apply for Basic access (planning), use a valid Ads customer ID, and grant adwords scope on login.",
+            "Enable Google Ads API in Cloud Console, use a valid Ads customer ID, grant adwords scope on login, and ensure API access (Basic) if required.",
         },
         { status: 502 }
       );
     }
 
     const results = adsJson?.results || [];
-    const keywords = results.slice(0, 50).map((row: any) => {
-      const metrics = row.keywordIdeaMetrics || {};
-      return {
-        keyword: row.text || row.keyword?.text || "",
-        volume: metrics.avgMonthlySearches ?? null,
-        cpc:
-          metrics.averageCpcMicros != null
-            ? Number(metrics.averageCpcMicros) / 1_000_000
-            : null,
-        competition: metrics.competitionIndex != null ? Number(metrics.competitionIndex) / 100 : null,
-        competitionLevel: metrics.competition ?? null,
-        source: "Google Ads Keyword Planner API",
-      };
-    }).filter((k: any) => k.keyword);
+    const keywords = results
+      .slice(0, 50)
+      .map((row: any) => {
+        const metrics = row.keywordIdeaMetrics || {};
+        return {
+          keyword: row.text || row.keyword?.text || "",
+          volume: metrics.avgMonthlySearches ?? null,
+          cpc:
+            metrics.averageCpcMicros != null
+              ? Number(metrics.averageCpcMicros) / 1_000_000
+              : null,
+          competition:
+            metrics.competitionIndex != null ? Number(metrics.competitionIndex) / 100 : null,
+          competitionLevel: metrics.competition ?? null,
+          source: "Google Ads Keyword Planner API",
+        };
+      })
+      .filter((k: any) => k.keyword);
 
     return NextResponse.json({
       keywords,
@@ -136,6 +135,9 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("keywords api error", e);
-    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Internal error" },
+      { status: 500 }
+    );
   }
 }
