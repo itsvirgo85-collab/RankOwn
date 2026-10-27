@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+// Current Google Ads API version (v17 returns 404)
+const ADS_API_VERSION = "v26";
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -20,6 +23,16 @@ export async function POST(req: Request) {
             "GOOGLE_ADS_CUSTOMER_ID not set. Add your Google Ads customer ID in Vercel environment variables.",
         },
         { status: 503 }
+      );
+    }
+
+    if (!/^\d{10}$/.test(customerId)) {
+      return NextResponse.json(
+        {
+          error:
+            "GOOGLE_ADS_CUSTOMER_ID must be exactly 10 digits (no dashes). Example: 1234567890",
+        },
+        { status: 400 }
       );
     }
 
@@ -65,17 +78,16 @@ export async function POST(req: Request) {
     };
     const geo = geoByCountry[country] || geoByCountry.US;
 
-    const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "";
     const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || "").replace(/-/g, "");
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     };
-    if (developerToken) headers["developer-token"] = developerToken;
+    // Developer tokens were sunset Sep 2026 — access is tied to Cloud project
     if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
 
-    const endpoint = `https://googleads.googleapis.com/v17/customers/${customerId}:generateKeywordIdeas`;
+    const endpoint = `https://googleads.googleapis.com/${ADS_API_VERSION}/customers/${customerId}:generateKeywordIdeas`;
 
     const adsRes = await fetch(endpoint, {
       method: "POST",
@@ -96,14 +108,20 @@ export async function POST(req: Request) {
         adsJson?.error?.message ||
         adsJson?.error?.status ||
         `Google Ads API error (${adsRes.status})`;
-      return NextResponse.json(
-        {
-          error: msg,
-          hint:
-            "Enable Google Ads API in Cloud Console, use a valid Ads customer ID, grant adwords scope on login, and ensure API access (Basic) if required.",
-        },
-        { status: 502 }
-      );
+
+      let hint =
+        "1) Enable Google Ads API in the same Cloud project as your OAuth client. 2) Confirm Customer ID is 10 digits. 3) Request Explorer/Basic access for the Cloud project if still on Test.";
+
+      if (adsRes.status === 404) {
+        hint =
+          "404 usually means wrong Customer ID, or the Ads account is not accessible with this Google login. Double-check Customer ID in ads.google.com (top-right), no dashes.";
+      }
+      if (adsRes.status === 403) {
+        hint =
+          "403 = permission / access level. Enable Google Ads API on your Cloud project and raise access (Explorer/Basic) from Google Cloud Ads API overview.";
+      }
+
+      return NextResponse.json({ error: msg, hint, status: adsRes.status }, { status: 502 });
     }
 
     const results = adsJson?.results || [];
@@ -135,9 +153,6 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("keywords api error", e);
-    return NextResponse.json(
-      { error: e?.message || "Internal error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
   }
 }
